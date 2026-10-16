@@ -30,6 +30,9 @@ jobs:
           mkdir _site
           cp index.html _site/
           cp -r css js _site/
+          # 브라우저 캐시 때문에 이전 CSS/JS 가 쓰이지 않도록 배포마다 주소에 커밋 번호를 붙임
+          sed -i "s/?v=dev/?v=${GITHUB_SHA::8}/g" _site/index.html
+          grep -q "?v=${GITHUB_SHA::8}" _site/index.html
           if find _site -iname '*.hwp' -o -iname '*.hwpx' | grep -q .; then
             echo "HWP 문서가 배포 대상에 포함되어 있습니다." >&2; exit 1
           fi
