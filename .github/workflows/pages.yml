@@ -1,0 +1,42 @@
+# main 브랜치에 push 하면 뷰어(index.html, css, js)만 GitHub Pages 로 배포합니다.
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # 배포할 파일만 모음 (문서 파일 등은 절대 포함되지 않도록)
+      - name: Collect site files
+        run: |
+          mkdir _site
+          cp index.html _site/
+          cp -r css js _site/
+          if find _site -iname '*.hwp' -o -iname '*.hwpx' | grep -q .; then
+            echo "HWP 문서가 배포 대상에 포함되어 있습니다." >&2; exit 1
+          fi
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

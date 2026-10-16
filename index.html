@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HWP 뷰어</title>
+  <link rel="stylesheet" href="css/viewer.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="currentColor" d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5L14 3.5zM7 12h10v1.6H7V12zm0 3.4h10V17H7v-1.6zm0 3.4h6.5v1.6H7v-1.6z"/></svg>
+      <span>HWP 뷰어</span>
+    </div>
+    <label class="btn primary" for="fileInput">파일 열기</label>
+    <input id="fileInput" type="file" accept=".hwp,.hwpx" hidden>
+    <span id="fileName" class="file-name"></span>
+    <span id="dirtyMark" class="dirty" hidden>● 수정됨</span>
+    <div class="spacer"></div>
+    <div class="edit-tools">
+      <button class="btn" id="editBtn" title="편집 모드 켜기/끄기 (Ctrl E)" aria-pressed="false" disabled>편집</button>
+      <button class="btn" id="saveBtn" title="저장 (Ctrl S)" disabled>저장</button>
+      <button class="btn" id="saveAsBtn" title="다른 이름으로 저장 (Ctrl Shift S)" disabled>다른 이름으로</button>
+    </div>
+    <span id="pageInfo" class="page-info"></span>
+    <div class="zoom">
+      <button class="btn" id="zoomOut" title="축소 (Ctrl -)">−</button>
+      <button class="btn zoom-val" id="zoomReset" title="100%로">100%</button>
+      <button class="btn" id="zoomIn" title="확대 (Ctrl +)">+</button>
+      <button class="btn" id="zoomFit" title="폭 맞춤">폭 맞춤</button>
+    </div>
+    <button class="btn" id="printBtn" title="인쇄 / PDF 저장 (Ctrl P)" disabled>인쇄</button>
+  </header>
+  <div id="editBar" class="table-tools" hidden>
+    <span class="label">글자</span>
+    <button class="btn" id="painterBtn" title="글자 서식 복사: 누른 뒤 적용할 글자를 드래그 (Esc 취소)">🖌 서식 복사</button>
+    <span class="size-box" title="글자 크기 (pt) — 선택한 글자, 선택이 없으면 문단 전체">
+      <button class="btn" id="sizeDown" title="글자 작게">−</button>
+      <input id="sizeInput" type="number" min="1" max="200" step="0.5" aria-label="글자 크기 (pt)">
+      <span class="unit">pt</span>
+      <button class="btn" id="sizeUp" title="글자 크게">+</button>
+    </span>
+    <button class="btn bold-btn" id="boldBtn" title="굵게 (Ctrl B)"><b>B</b></button>
+    <span id="tableTools" hidden>
+      <span class="sep"></span>
+      <span class="label">표</span>
+      <button class="btn" id="cellPainterBtn" title="셀 서식 복사: 누른 뒤 적용할 셀을 클릭 (Esc 취소)">🖌 셀 서식 복사</button>
+      <button class="btn" data-op="rowAbove">위에 행 추가</button>
+      <button class="btn" data-op="rowBelow">아래에 행 추가</button>
+      <button class="btn" data-op="rowDelete">행 삭제</button>
+      <button class="btn" data-op="colLeft">왼쪽에 열 추가</button>
+      <button class="btn" data-op="colRight">오른쪽에 열 추가</button>
+      <button class="btn" data-op="colDelete">열 삭제</button>
+      <button class="btn danger" data-op="tableDelete">표 삭제</button>
+    </span>
+    <span id="painterHint" class="hint" hidden></span>
+  </div>
+
+  <main id="viewport">
+    <div id="empty" class="empty">
+      <div class="drop-card">
+        <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><path fill="currentColor" d="M6 2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zm8 1.5V8h4.5L14 3.5zM11 11v4H8l4 4 4-4h-3v-4h-2z"/></svg>
+        <h1>한글 문서를 여기에 끌어다 놓으세요</h1>
+        <p><b>.hwp</b> (한글 97 이후 5.0 형식) 와 <b>.hwpx</b> 파일을 열고, <b>편집</b>해서 같은 형식으로 저장할 수 있습니다.</p>
+        <label class="btn primary big" for="fileInput">파일 선택</label>
+        <p class="note">파일은 이 컴퓨터의 브라우저 안에서만 처리되며 어디에도 업로드되지 않습니다.</p>
+      </div>
+    </div>
+    <div id="loading" class="loading" hidden><div class="spinner"></div><span>문서를 여는 중…</span></div>
+    <div id="error" class="error" hidden></div>
+    <div id="pages" class="pages"></div>
+  </main>
+  <div id="dropOverlay" class="drop-overlay" hidden>여기에 놓으면 문서가 열립니다</div>
+
+  <script src="js/container.js"></script>
+  <script src="js/hwp.js"></script>
+  <script src="js/hwpx.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/writer-hwp.js"></script>
+  <script src="js/writer-hwpx.js"></script>
+  <script src="js/editor.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
