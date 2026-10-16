@@ -281,5 +281,127 @@
     return recs.length - 1;
   }
 
-  global.HwpWriter = { save, newParaLike, newCellLike, colWidths, deriveCharShape };
+  // DocInfo 에 레코드를 추가 (같은 종류의 마지막 레코드 뒤) 하고 ID_MAPPINGS 의 개수를 갱신
+  function addDocInfoRec(doc, tag, data, mapIndex) {
+    const di = doc.source.docInfoRecs;
+    const same = di.filter((r) => r.tag === tag);
+    const last = same[same.length - 1];
+    const rec = { tag, level: last ? last.level : 1, data, children: [] };
+    di.splice(last ? di.indexOf(last) + 1 : di.length, 0, rec);
+    const idm = di.find((r) => r.tag === T.ID_MAPPINGS);
+    if (idm && idm.data.length >= mapIndex * 4 + 4) {
+      idm.data = idm.data.slice();
+      view(idm.data).setInt32(mapIndex * 4, same.length + 1, true);
+    }
+    return same.length; // 새 레코드의 0 기준 순번
+  }
+  const sameBytes = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+  // 기존 문단 모양을 바탕으로 정렬만 바꾼 문단 모양 ID
+  const ALIGN_CODE = { justify: 0, left: 1, right: 2, center: 3 };
+  function deriveParaShape(doc, shape, mods) {
+    const recs = doc.source.docInfoRecs.filter((r) => r.tag === T.PARA_SHAPE);
+    const base = recs[shape] || recs[0];
+    const d = base.data.slice();
+    const v = view(d);
+    if (mods.align != null) {
+      const a = v.getUint32(0, true);
+      v.setUint32(0, ((a & ~(7 << 2)) | (ALIGN_CODE[mods.align] << 2)) >>> 0, true);
+    }
+    const found = recs.findIndex((r) => sameBytes(r.data, d));
+    if (found >= 0) return found;
+    const id = addDocInfoRec(doc, T.PARA_SHAPE, d, 13);
+    doc.paraShapes[id] = { ...(doc.paraShapes[shape] || doc.paraShapes[0]), ...mods };
+    return id;
+  }
+
+  // ---------- 테두리 ----------
+  // sides: { left|right|top|bottom: { type: 0(없음)|1(실선), width: mm } }
+  const BORDER_WIDTHS = [0.1, 0.12, 0.15, 0.2, 0.25, 0.3, 0.4, 0.5, 0.6, 0.7, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0];
+  const SIDE_OFF = { left: 2, right: 8, top: 14, bottom: 20 };
+  function deriveBorderFill(doc, id, sides) {
+    const recs = doc.source.docInfoRecs.filter((r) => r.tag === T.BORDER_FILL);
+    if (!recs.length) throw new Error('문서에 테두리 정보가 없습니다.');
+    const base = recs[id - 1] || recs[0];
+    const d = base.data.slice();
+    const v = view(d);
+    const model = JSON.parse(JSON.stringify(doc.borderFills[recs.indexOf(base) + 1] || { borders: {} }));
+    for (const [side, b] of Object.entries(sides)) {
+      const o = SIDE_OFF[side];
+      const wi = BORDER_WIDTHS.indexOf(b.width);
+      d[o] = b.type;
+      d[o + 1] = wi >= 0 ? wi : 1;
+      v.setUint32(o + 2, 0, true); // 검정
+      model.borders[side] = { type: b.type, width: b.width, color: '#000000' };
+    }
+    const found = recs.findIndex((r) => sameBytes(r.data, d));
+    if (found >= 0) return found + 1;
+    const nid = addDocInfoRec(doc, T.BORDER_FILL, d, 8) + 1;
+    doc.borderFills[nid] = model;
+    return nid;
+  }
+
+  // ---------- 새 표 ----------
+  const TBL_ID = 0x74626C20; // 'tbl '
+  const randId = () => (Math.random() * 0x7FFFFFFF) >>> 0;
+  function newTable(doc, tmpl, { rows, cols, width, rowH, borderFillId }) {
+    const lvl = tmpl.raw.level + 1; // 표를 담는 문단의 하위 레벨
+    const wU = toUnit(width), cellW = Math.floor(wU / cols), hU = toUnit(rowH);
+    const pad = [510, 510, 141, 141];
+    // 레코드 길이는 문서 버전마다 다름 (한글이 저장한 파일과 같게 맞춤)
+    const v = (doc.format.match(/(\d+)\.(\d+)\.(\d+)\.(\d+)/) || [0, 5, 0, 0, 0]).slice(1).map(Number);
+    const ver = ((v[0] << 24) | (v[1] << 16) | (v[2] << 8) | v[3]) >>> 0;
+    const ctrlLen = ver >= 0x05000300 ? 46 : ver >= 0x05000200 ? 44 : 40;
+    const cellLen = ver >= 0x05000300 ? 47 : ver >= 0x05000200 ? 46 : 38;
+    const zoneLen = ver >= 0x05000100 ? 2 : 0;
+
+    const ch = new Uint8Array(ctrlLen);
+    const cv = view(ch);
+    cv.setUint32(0, TBL_ID, true);
+    cv.setUint32(4, 0x082A2311, true); // 글자처럼 취급, 문단 기준, 위아래 배치, 번호 종류: 표
+    cv.setUint32(16, cellW * cols, true);
+    cv.setUint32(20, hU * rows, true);
+    for (let i = 0; i < 4; i++) cv.setInt16(28 + i * 2, 283, true); // 바깥 여백 1mm
+    cv.setUint32(36, randId(), true);
+    const node = rec(T.CTRL_HEADER, lvl, ch);
+
+    const td = new Uint8Array(18 + rows * 2 + 2 + zoneLen);
+    const tv = view(td);
+    tv.setUint32(0, 0x04000006, true); // 쪽 경계에서 셀 단위로 나눔, 제목 줄 반복
+    tv.setUint16(4, rows, true);
+    tv.setUint16(6, cols, true);
+    pad.forEach((x, i) => tv.setUint16(10 + i * 2, x, true));
+    for (let r = 0; r < rows; r++) tv.setUint16(18 + r * 2, cols, true);
+    tv.setUint16(18 + rows * 2, borderFillId, true);
+    node.children.push(rec(T.TABLE, lvl + 1, td));
+
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const lh = new Uint8Array(cellLen);
+        const lv = view(lh);
+        lv.setUint16(0, 1, true);
+        lv.setUint32(4, 1 << 5, true); // 세로 가운데
+        lv.setUint32(16, cellW, true); lv.setUint32(20, hU, true);
+        pad.forEach((x, i) => lv.setUint16(24 + i * 2, x, true));
+        lv.setUint16(32, borderFillId, true);
+        lv.setUint32(34, cellW, true);
+        const p = newParaLike(tmpl);
+        p.raw.level = lvl + 1;
+        p.items = [];
+        cells.push({
+          row: r, col: c, rowSpan: 1, colSpan: 1, w: cellW / PX_HWPUNIT, h: rowH,
+          pad: pad.map((x) => x / PX_HWPUNIT), borderFillId, valign: 'middle',
+          paras: [p], raw: rec(T.LIST_HEADER, lvl + 1, lh),
+        });
+      }
+    }
+    const lo = TBL_ID & 0xFFFF, hi = TBL_ID >>> 16;
+    return {
+      t: 'table', node, cells, rows, cols, borderFillId, w: width, layout: { inline: true },
+      codes: [11, lo, hi, 0, 0, 0, 0, 11], cs: tmpl.cs, dirty: true,
+    };
+  }
+
+  global.HwpWriter = { save, newParaLike, newCellLike, colWidths, deriveCharShape, deriveParaShape, deriveBorderFill, newTable };
 })(window);

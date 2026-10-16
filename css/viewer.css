@@ -96,7 +96,32 @@ main { flex: 1; overflow: auto; position: relative; }
 .size-box .unit { font-size: 12px; color: var(--muted); margin-right: 2px; }
 .bold-btn { min-width: 32px; }
 .hint { color: var(--accent); font-size: 13px; font-weight: 600; margin-left: 6px; }
-.history-tools { display: inline-flex; gap: 4px; margin-left: auto; }
+#editBar { flex-wrap: nowrap; align-items: flex-start; }
+.edit-main { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; flex: 1; min-width: 0; }
+.history-tools { display: inline-flex; gap: 4px; margin-left: auto; flex-shrink: 0; }
+.align-box, .seg { display: inline-flex; gap: 2px; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; }
+.icon-btn svg { fill: currentColor; }
+.seg .btn { border-radius: 0; }
+.seg .btn:first-child { border-radius: 6px 0 0 6px; }
+.seg .btn:last-child { border-radius: 0 6px 6px 0; }
+.tbl-insert { position: relative; display: inline-flex; }
+#tableBtn { display: inline-flex; align-items: center; gap: 4px; }
+.tbl-picker {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; padding: 8px 10px 10px;
+  background: var(--bar); border: 1px solid var(--bar-border); border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
+}
+.tbl-picker[hidden] { display: none; }
+.tp-label { font-size: 13px; font-weight: 700; margin-bottom: 6px; white-space: nowrap; }
+.tp-grid { display: grid; grid-template-columns: repeat(10, 18px); gap: 3px; }
+.tp-grid span { width: 18px; height: 18px; border: 1px solid #8a8f98; background: var(--bg); box-sizing: border-box; cursor: pointer; }
+.tp-grid span.on { border-color: #e65100; background: #fff3c4; }
+.tp-custom { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--bar-border); font-size: 13px; white-space: nowrap; }
+.tp-custom input {
+  width: 48px; padding: 2px 4px; font: inherit; border: 1px solid var(--bar-border); border-radius: 5px;
+  background: var(--bg); color: var(--text);
+}
 .toast {
   position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 200;
   background: #1f2328; color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 14px;

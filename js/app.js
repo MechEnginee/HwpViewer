@@ -23,6 +23,7 @@
   editor.onSelection = updateFormatState;
   editor.onPainter = () => updatePainterUI();
   editor.onHistory = (op) => (op === 'undo' ? undo() : redo());
+  editor.onStructure = () => render();
 
   // ---------- 실행 취소 / 다시 실행 ----------
   // 한 동작(예: 문단 나누기)에서 변경 알림이 여러 번 와도 한 단계로 기록되도록 모아서 처리
@@ -122,6 +123,7 @@
     $('editBtn').textContent = v ? '편집 끝내기' : '편집';
     $('tableTools').hidden = true;
     $('editBar').hidden = !v;
+    setPicker(false);
     editor.stopPainter();
     render();
   }
@@ -251,6 +253,8 @@
     const sh = currentShape();
     if (document.activeElement !== $('sizeInput')) $('sizeInput').value = sh ? Math.round(sh.size * 10) / 10 : '';
     $('boldBtn').classList.toggle('active', !!(sh && sh.bold));
+    const al = doc && editing ? editor.currentAlign() : null;
+    document.querySelectorAll('#alignBox [data-align]').forEach((b) => b.classList.toggle('active', b.dataset.align === al));
   }
 
   function updatePainterUI() {
@@ -292,9 +296,84 @@
     updatePainterUI();
   };
 
+  // ---------- 문단 정렬 ----------
+  $('alignBox').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-align]');
+    if (!b) return;
+    if (!editor.setAlign(b.dataset.align)) toast('정렬할 문단을 먼저 클릭하세요.');
+    updateFormatState();
+  });
+
+  // ---------- 표 만들기 ----------
+  const TP_COLS = 10, TP_ROWS = 8;
+  const tpCells = [];
+  for (let r = 0; r < TP_ROWS; r++) {
+    for (let c = 0; c < TP_COLS; c++) {
+      const s = document.createElement('span');
+      s.dataset.r = r + 1; s.dataset.c = c + 1;
+      $('tpGrid').appendChild(s);
+      tpCells.push(s);
+    }
+  }
+  function tpHighlight(rows, cols) {
+    tpCells.forEach((s) => s.classList.toggle('on', +s.dataset.r <= rows && +s.dataset.c <= cols));
+    $('tpLabel').textContent = rows ? `${cols}×${rows} 표` : '표 만들기';
+  }
+  function setPicker(open) {
+    $('tablePicker').hidden = !open;
+    $('tableBtn').setAttribute('aria-expanded', String(open));
+    $('tableBtn').classList.toggle('active', open);
+    if (open) tpHighlight(0, 0);
+  }
+  function insertTable(rows, cols) {
+    setPicker(false);
+    rows = Math.max(1, Math.min(200, Math.round(rows) || 0));
+    cols = Math.max(1, Math.min(50, Math.round(cols) || 0));
+    let res;
+    try { res = editor.insertTable(rows, cols); } catch (e) {
+      console.error(e);
+      alert('표를 만들지 못했습니다.\n\n' + (e && e.message ? e.message : e));
+      return;
+    }
+    if (res === 'nocaret') toast('표를 넣을 위치를 먼저 클릭하세요.');
+    else if (res === 'notallowed') toast('글상자나 각주 안에는 표를 넣을 수 없습니다.');
+  }
+  $('tableBtn').onclick = () => setPicker($('tablePicker').hidden);
+  $('tpGrid').addEventListener('mouseover', (e) => { const s = e.target.closest('span'); if (s) tpHighlight(+s.dataset.r, +s.dataset.c); });
+  $('tpGrid').addEventListener('mouseleave', () => tpHighlight(0, 0));
+  $('tpGrid').addEventListener('click', (e) => { const s = e.target.closest('span'); if (s) insertTable(+s.dataset.r, +s.dataset.c); });
+  $('tpMake').onclick = () => insertTable(+$('tpRows').value, +$('tpCols').value);
+  ['tpRows', 'tpCols'].forEach((id) => $(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); $('tpMake').click(); }
+  }));
+  document.addEventListener('mousedown', (e) => { if (!$('tablePicker').hidden && !e.target.closest('.tbl-insert')) setPicker(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('tablePicker').hidden) setPicker(false); });
+
+  // ---------- 표 테두리 ----------
+  let borderScope = 'table';
+  $('borderScope').addEventListener('click', (e) => {
+    const b = e.target.closest('button[data-scope]');
+    if (!b) return;
+    borderScope = b.dataset.scope;
+    $('borderScope').querySelectorAll('button').forEach((x) => {
+      x.classList.toggle('active', x === b);
+      x.setAttribute('aria-checked', String(x === b));
+    });
+  });
+
   // 편집 도구: 클릭해도 편집 커서가 사라지지 않도록 버튼의 mousedown 기본 동작을 막음
-  $('editBar').addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+  $('editBar').addEventListener('mousedown', (e) => { if (e.target.closest('button, .tp-grid')) e.preventDefault(); });
   $('tableTools').addEventListener('click', (e) => {
+    const bb = e.target.closest('button[data-border]');
+    if (bb) {
+      try {
+        if (!editor.setBorder(bb.dataset.border, borderScope)) toast('테두리를 바꿀 표의 셀을 먼저 클릭하세요.');
+      } catch (err) {
+        console.error(err);
+        alert('테두리를 바꾸지 못했습니다.\n\n' + (err && err.message ? err.message : err));
+      }
+      return;
+    }
     const b = e.target.closest('button[data-op]');
     if (!b) return;
     if (b.dataset.op === 'tableDelete' && !confirm('이 표를 삭제할까요?')) return;

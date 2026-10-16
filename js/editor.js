@@ -466,6 +466,150 @@
       return this.applyChar((cs) => A.deriveCharShape(this.doc, cs, mods));
     }
 
+    // ---------- 문단 정렬 ----------
+    // 선택 영역에 걸친 편집 문단들 (선택이 없으면 마지막으로 커서가 있던 문단)
+    selectedHosts() {
+      const r = this.range();
+      if (r && this.container.contains(r.commonAncestorContainer)) {
+        const hosts = Array.from(this.container.querySelectorAll(EDITABLE)).filter((h) => r.intersectsNode(h) && !h.querySelector(EDITABLE));
+        if (hosts.length) return hosts;
+        const h = this.hostOf(r.startContainer);
+        if (h) return [h];
+      }
+      return this.saved && this.saved.host.isConnected ? [this.saved.host] : [];
+    }
+
+    currentAlign() {
+      const h = this.saved && this.saved.host.isConnected ? this.saved.host : null;
+      if (!h) return null;
+      const ps = this.doc.paraShapes[h._para.shape];
+      return (ps && ps.align) || 'justify';
+    }
+
+    setAlign(align) {
+      const hosts = this.selectedHosts();
+      if (!hosts.length) return false;
+      const A = this.adapter();
+      const sv = this.saved;
+      let changed = false;
+      for (const h of hosts) {
+        this.sync(h);
+        const p = h._para;
+        const ns = A.deriveParaShape(this.doc, p.shape, { align });
+        if (ns === p.shape) continue;
+        p.shape = ns;
+        p.dirty = true;
+        changed = true;
+      }
+      if (!changed) return true;
+      this.onChange();
+      const fresh = hosts.map((h) => this.rerender(h));
+      if (sv && hosts.includes(sv.host)) {
+        const n = fresh[hosts.indexOf(sv.host)];
+        this.saved = { host: n, start: sv.start, end: sv.end };
+        this.selectText(n, sv.start, sv.end);
+      }
+      return true;
+    }
+
+    // ---------- 표 만들기 ----------
+    insertTable(rows, cols) {
+      const sv = this.saved;
+      if (!sv || !sv.host.isConnected) return 'nocaret';
+      let host = sv.host;
+      const owner = host._owner;
+      if (owner.kind === 'box' || owner.kind === 'foot') return 'notallowed';
+      this.sync(host);
+      const para = host._para, list = host._list;
+      const A = this.adapter();
+
+      // 표 너비: 쪽 본문 폭 (셀 안이면 셀 안쪽 폭)
+      let width;
+      if (owner.kind === 'cell') width = Math.max(40, (owner.cell.w || 200) - ((owner.cell.pad || [0, 0])[0] + (owner.cell.pad || [0, 0])[1]) - 4);
+      else {
+        const pg = Object.assign({ width: 793.7, left: 113.4, right: 113.4 }, (owner.section && owner.section.page) || {});
+        width = pg.width - pg.left - pg.right - 4;
+      }
+      const base = (owner.kind === 'cell' && owner.cell.borderFillId) || 1;
+      const thin = { type: 1, width: 0.12 };
+      const bf = A.deriveBorderFill(this.doc, base, { left: thin, right: thin, top: thin, bottom: thin });
+      const table = A.newTable(this.doc, para, { rows, cols, width, rowH: 24, borderFillId: bf });
+
+      const visible = para.items.some((it) => !(it.t === 'hidden'));
+      let idx = list.indexOf(para);
+      if (!visible) {
+        // 빈 문단: 그 자리에 표를 넣음
+        para.items = para.items.concat([table]);
+        para.dirty = true;
+      } else {
+        let start = Math.min(sv.start, sv.end);
+        const total = this.textLength(para);
+        let before = false;
+        if (start <= 0 && total > 0) before = true;
+        else if (start < total) {
+          // 문단 가운데: 커서 위치에서 나눈 뒤 사이에 넣음
+          this.selectText(host, start, start);
+          const b = this.split(host);
+          host = b ? this.elOf(para) : host;
+        }
+        const np = A.newParaLike(para);
+        np.items = [table];
+        np.cs = para.cs;
+        idx = list.indexOf(para) + (before ? 0 : 1);
+        list.splice(idx, 0, np);
+      }
+      const tp = list[idx];
+      if (idx === list.length - 1) {
+        const tail = A.newParaLike(tp);
+        tail.items = [];
+        list.push(tail);
+      }
+      this.containerChanged(owner);
+      if (this.onStructure) this.onStructure();
+      const tdEl = Array.from(this.container.querySelectorAll('td')).find((x) => x._cell === table.cells[0]);
+      const target = tdEl && tdEl.querySelector(EDITABLE);
+      if (target) this.placeCaret(target, false);
+      return 'ok';
+    }
+
+    // ---------- 표 테두리 ----------
+    // style: 'none' | 'thin' | 'thick', scope: 'table' | 'outer' | 'cell'
+    setBorder(style, scope) {
+      const td = this.cellAtSelection() || (this.cellCtx && this.cellCtx.td);
+      if (!td || !td.isConnected) return false;
+      const t = td._table, cur = td._cell;
+      td.closest('table').querySelectorAll(EDITABLE).forEach((h) => this.sync(h));
+      const b = style === 'none' ? { type: 0, width: 0.12 } : { type: 1, width: style === 'thick' ? 0.4 : 0.12 };
+      const A = this.adapter();
+      const cache = new Map();
+      const targets = scope === 'cell' ? [cur] : t.cells;
+      for (const c of targets) {
+        const sides = {};
+        for (const side of ['left', 'right', 'top', 'bottom']) {
+          if (scope === 'outer') {
+            const edge = side === 'left' ? c.col === 0 : side === 'right' ? c.col + c.colSpan >= t.cols
+              : side === 'top' ? c.row === 0 : c.row + c.rowSpan >= t.rows;
+            if (!edge) continue;
+          }
+          sides[side] = b;
+        }
+        if (!Object.keys(sides).length) continue;
+        const key = (c.borderFillId || 0) + '|' + Object.keys(sides).join(',');
+        if (!cache.has(key)) cache.set(key, A.deriveBorderFill(this.doc, c.borderFillId || 1, sides));
+        c.borderFillId = cache.get(key);
+      }
+      t.dirty = true;
+      this.onChange();
+      const host = td.closest('table').parentElement.closest('.hwp-p');
+      if (host) {
+        const n = this.rerender(host);
+        const ntd = Array.from(n.querySelectorAll('td')).find((x) => x._cell === cur);
+        const target = ntd && ntd.querySelector(EDITABLE);
+        if (target) this.placeCaret(target, true);
+      }
+      return true;
+    }
+
     // ---------- 서식 복사 ----------
     startTextPainter() {
       const cs = this.currentCs();

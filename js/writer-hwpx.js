@@ -163,5 +163,107 @@
     return newId;
   }
 
-  global.HwpxWriter = { save, newParaLike, newCellLike, deriveCharShape };
+  // header.xml 의 같은 종류 요소 목록에서 동일한 것을 찾거나 새 ID 로 추가
+  function headerEls(doc, name) {
+    const out = {};
+    for (const e of doc.source.headerXml.getElementsByTagNameNS('*', name)) out[e.getAttribute('id')] = e;
+    return out;
+  }
+  function addHeaderEl(doc, name, base, c) {
+    const els = headerEls(doc, name);
+    const ser = new XMLSerializer();
+    const key = (e) => { const x = e.cloneNode(true); x.removeAttribute('id'); return ser.serializeToString(x); };
+    const k = key(c);
+    for (const [id, e] of Object.entries(els)) if (key(e) === k) return { id: Number(id), added: false };
+    const newId = Math.max(0, ...Object.keys(els).map(Number)) + 1;
+    c.setAttribute('id', String(newId));
+    const parent = base.parentNode;
+    parent.appendChild(c);
+    if (parent.hasAttribute('itemCnt')) parent.setAttribute('itemCnt', String(Array.from(parent.children).filter((x) => x.localName === name).length));
+    doc.source.headerDirty = true;
+    return { id: newId, added: true };
+  }
+
+  // 기존 문단 모양(paraPr)을 바탕으로 정렬만 바꾼 문단 모양 ID
+  function deriveParaShape(doc, shape, mods) {
+    const els = headerEls(doc, 'paraPr');
+    const base = els[shape] || Object.values(els)[0];
+    const c = base.cloneNode(true);
+    if (mods.align != null) {
+      let al = kid(c, 'align');
+      if (!al) { al = mk(c, 'align'); c.insertBefore(al, c.firstChild); }
+      al.setAttribute('horizontal', mods.align.toUpperCase());
+      if (!al.hasAttribute('vertical')) al.setAttribute('vertical', 'BASELINE');
+    }
+    const { id, added } = addHeaderEl(doc, 'paraPr', base, c);
+    if (added) doc.paraShapes[id] = { ...(doc.paraShapes[shape] || doc.paraShapes[0]), ...mods };
+    return id;
+  }
+
+  // sides: { left|right|top|bottom: { type: 0(없음)|1(실선), width: mm } }
+  function deriveBorderFill(doc, id, sides) {
+    const els = headerEls(doc, 'borderFill');
+    const base = els[id] || Object.values(els)[0];
+    if (!base) throw new Error('문서에 테두리 정보가 없습니다.');
+    const c = base.cloneNode(true);
+    const model = JSON.parse(JSON.stringify(doc.borderFills[base.getAttribute('id')] || { borders: {} }));
+    for (const [side, b] of Object.entries(sides)) {
+      let e = kid(c, side + 'Border');
+      if (!e) { e = mk(c, side + 'Border'); c.appendChild(e); }
+      e.setAttribute('type', b.type ? 'SOLID' : 'NONE');
+      e.setAttribute('width', b.width + ' mm');
+      e.setAttribute('color', '#000000');
+      model.borders[side] = { type: b.type, width: b.width, color: '#000000' };
+    }
+    const r = addHeaderEl(doc, 'borderFill', base, c);
+    if (r.added) doc.borderFills[r.id] = model;
+    return r.id;
+  }
+
+  // ---------- 새 표 ----------
+  function newTable(doc, tmpl, { rows, cols, width, rowH, borderFillId }) {
+    const ref = tmpl.raw;
+    const set = (e, attrs) => { for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v)); return e; };
+    const add = (parent, name, attrs) => { const e = set(mk(ref, name), attrs || {}); parent.appendChild(e); return e; };
+    const wU = Math.round(width * PX_HWPUNIT), cellW = Math.floor(wU / cols), hU = Math.round(rowH * PX_HWPUNIT);
+    const el = set(mk(ref, 'tbl'), {
+      id: (Math.random() * 0x7FFFFFFF) >>> 0, zOrder: 0, numberingType: 'TABLE', textWrap: 'TOP_AND_BOTTOM',
+      textFlow: 'BOTH_SIDES', lock: 0, dropcapstyle: 'None', pageBreak: 'CELL', repeatHeader: 1,
+      rowCnt: rows, colCnt: cols, cellSpacing: 0, borderFillIDRef: borderFillId, noAdjust: 0,
+    });
+    add(el, 'sz', { width: cellW * cols, widthRelTo: 'ABSOLUTE', height: hU * rows, heightRelTo: 'ABSOLUTE', protect: 0 });
+    add(el, 'pos', {
+      treatAsChar: 1, affectLSpacing: 0, flowWithText: 1, allowOverlap: 0, holdAnchorAndSO: 0,
+      vertRelTo: 'PARA', horzRelTo: 'COLUMN', vertAlign: 'TOP', horzAlign: 'LEFT', vertOffset: 0, horzOffset: 0,
+    });
+    add(el, 'outMargin', { left: 283, right: 283, top: 283, bottom: 283 });
+    add(el, 'inMargin', { left: 510, right: 510, top: 141, bottom: 141 });
+    const pad = [510, 510, 141, 141];
+    const cells = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const tc = set(mk(ref, 'tc'), { name: '', header: 0, hasMargin: 0, protect: 0, editable: 0, dirty: 0, borderFillIDRef: borderFillId });
+        add(tc, 'subList', {
+          id: '', textDirection: 'HORIZONTAL', lineWrap: 'BREAK', vertAlign: 'CENTER',
+          linkListIDRef: 0, linkListNextIDRef: 0, textWidth: 0, textHeight: 0, hasTextRef: 0, hasNumRef: 0,
+        });
+        add(tc, 'cellAddr', { colAddr: c, rowAddr: r });
+        add(tc, 'cellSpan', { colSpan: 1, rowSpan: 1 });
+        add(tc, 'cellSz', { width: cellW, height: hU });
+        add(tc, 'cellMargin', { left: pad[0], right: pad[1], top: pad[2], bottom: pad[3] });
+        const p = newParaLike(tmpl);
+        p.items = [];
+        cells.push({
+          row: r, col: c, rowSpan: 1, colSpan: 1, w: cellW / PX_HWPUNIT, h: rowH,
+          pad: pad.map((x) => x / PX_HWPUNIT), borderFillId, valign: 'middle', paras: [p], raw: tc,
+        });
+      }
+    }
+    return {
+      t: 'table', el, cells, rows, cols, borderFillId, w: width, layout: { inline: true },
+      cs: tmpl.cs, runCs: tmpl.cs, dirty: true,
+    };
+  }
+
+  global.HwpxWriter = { save, newParaLike, newCellLike, deriveCharShape, deriveParaShape, deriveBorderFill, newTable };
 })(window);

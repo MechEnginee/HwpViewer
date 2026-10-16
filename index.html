@@ -32,6 +32,7 @@
     <button class="btn" id="printBtn" title="인쇄 / PDF 저장 (Ctrl P)" disabled>인쇄</button>
   </header>
   <div id="editBar" class="table-tools" hidden>
+    <div class="edit-main">
     <span class="label">글자</span>
     <button class="btn" id="painterBtn" title="글자 서식 복사: 누른 뒤 적용할 글자를 드래그 (Esc 취소)">🖌 서식 복사</button>
     <span class="size-box" title="글자 크기 (pt) — 선택한 글자, 선택이 없으면 문단 전체">
@@ -41,6 +42,30 @@
       <button class="btn" id="sizeUp" title="글자 크게">+</button>
     </span>
     <button class="btn bold-btn" id="boldBtn" title="굵게 (Ctrl B)"><b>B</b></button>
+    <span class="sep"></span>
+    <span class="label">문단</span>
+    <span class="align-box" id="alignBox">
+      <button class="btn icon-btn" data-align="left" title="왼쪽 정렬"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1" y="2" width="14" height="1.6" rx=".5"/><rect x="1" y="5.5" width="9" height="1.6" rx=".5"/><rect x="1" y="9" width="14" height="1.6" rx=".5"/><rect x="1" y="12.5" width="9" height="1.6" rx=".5"/></svg></button>
+      <button class="btn icon-btn" data-align="center" title="가운데 정렬"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1" y="2" width="14" height="1.6" rx=".5"/><rect x="3.5" y="5.5" width="9" height="1.6" rx=".5"/><rect x="1" y="9" width="14" height="1.6" rx=".5"/><rect x="3.5" y="12.5" width="9" height="1.6" rx=".5"/></svg></button>
+      <button class="btn icon-btn" data-align="right" title="오른쪽 정렬"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1" y="2" width="14" height="1.6" rx=".5"/><rect x="6" y="5.5" width="9" height="1.6" rx=".5"/><rect x="1" y="9" width="14" height="1.6" rx=".5"/><rect x="6" y="12.5" width="9" height="1.6" rx=".5"/></svg></button>
+      <button class="btn icon-btn" data-align="justify" title="양쪽 정렬"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><rect x="1" y="2" width="14" height="1.6" rx=".5"/><rect x="1" y="5.5" width="14" height="1.6" rx=".5"/><rect x="1" y="9" width="14" height="1.6" rx=".5"/><rect x="1" y="12.5" width="9" height="1.6" rx=".5"/></svg></button>
+    </span>
+    <span class="sep"></span>
+    <span class="tbl-insert">
+      <button class="btn" id="tableBtn" title="표 만들기" aria-haspopup="true" aria-expanded="false">
+        <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path fill="currentColor" d="M1 2h14v12H1V2zm1.3 1.3v2.4h3.4V3.3H2.3zm4.7 0v2.4h2V3.3H7zm3.3 0v2.4h3.4V3.3h-3.4zM2.3 7v2.4h3.4V7H2.3zM7 7v2.4h2V7H7zm3.3 0v2.4h3.4V7h-3.4zM2.3 10.7v2h3.4v-2H2.3zm4.7 0v2h2v-2H7zm3.3 0v2h3.4v-2h-3.4z"/></svg>
+        표 ▾
+      </button>
+      <div id="tablePicker" class="tbl-picker" hidden>
+        <div class="tp-label" id="tpLabel">표 만들기</div>
+        <div class="tp-grid" id="tpGrid"></div>
+        <div class="tp-custom">
+          <label>줄 <input id="tpRows" type="number" min="1" max="200" value="3"></label>
+          <label>칸 <input id="tpCols" type="number" min="1" max="50" value="3"></label>
+          <button class="btn" id="tpMake">표 삽입</button>
+        </div>
+      </div>
+    </span>
     <span id="tableTools" hidden>
       <span class="sep"></span>
       <span class="label">표</span>
@@ -52,8 +77,19 @@
       <button class="btn" data-op="colRight">오른쪽에 열 추가</button>
       <button class="btn" data-op="colDelete">열 삭제</button>
       <button class="btn danger" data-op="tableDelete">표 삭제</button>
+      <span class="sep"></span>
+      <span class="label">테두리</span>
+      <span class="seg" id="borderScope" role="radiogroup" aria-label="테두리 적용 범위">
+        <button class="btn active" data-scope="table" role="radio" aria-checked="true" title="표의 모든 선">표 전체</button>
+        <button class="btn" data-scope="outer" role="radio" aria-checked="false" title="표의 바깥 테두리만">바깥쪽</button>
+        <button class="btn" data-scope="cell" role="radio" aria-checked="false" title="커서가 있는 셀만">현재 셀</button>
+      </span>
+      <button class="btn" data-border="none" title="테두리 없음">없음</button>
+      <button class="btn" data-border="thin" title="얇은 실선 (0.12mm)">실선</button>
+      <button class="btn" data-border="thick" title="굵은 실선 (0.4mm)"><b>굵게</b></button>
     </span>
     <span id="painterHint" class="hint" hidden></span>
+    </div>
     <span class="history-tools">
       <button class="btn" id="undoBtn" title="실행 취소 (Ctrl Z)" disabled>↶ 실행 취소</button>
       <button class="btn" id="redoBtn" title="다시 실행 (Ctrl Y)" disabled>↷ 다시 실행</button>
