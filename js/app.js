@@ -368,7 +368,13 @@
     $('tablePicker').hidden = !open;
     $('tableBtn').setAttribute('aria-expanded', String(open));
     $('tableBtn').classList.toggle('active', open);
-    if (open) tpHighlight(0, 0);
+    if (open) {
+      tpHighlight(0, 0);
+      // 도구 모음이 옆으로 스크롤되는 모바일에서도 잘리지 않도록 화면 기준으로 위치를 잡음
+      const r = $('tableBtn').getBoundingClientRect(), p = $('tablePicker');
+      p.style.top = r.bottom + 4 + 'px';
+      p.style.left = Math.max(8, Math.min(r.left, window.innerWidth - p.offsetWidth - 8)) + 'px';
+    }
   }
   function insertTable(rows, cols) {
     setPicker(false);
@@ -392,6 +398,7 @@
     if (e.key === 'Enter') { e.preventDefault(); $('tpMake').click(); }
   }));
   document.addEventListener('mousedown', (e) => { if (!$('tablePicker').hidden && !e.target.closest('.tbl-insert')) setPicker(false); });
+  $('editBar').addEventListener('scroll', () => setPicker(false), { passive: true });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('tablePicker').hidden) setPicker(false); });
 
   // ---------- 표 테두리 ----------

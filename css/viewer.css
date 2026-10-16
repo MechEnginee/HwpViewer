@@ -44,7 +44,7 @@ body {
 .zoom { display: flex; gap: 4px; }
 .btn {
   border: 1px solid var(--bar-border); background: var(--btn); color: var(--text);
-  padding: 5px 11px; border-radius: 6px; cursor: pointer; font: inherit; user-select: none;
+  padding: 5px 11px; border-radius: 6px; cursor: pointer; font: inherit; user-select: none; white-space: nowrap;
 }
 .btn:hover:not(:disabled) { background: var(--btn-hover); }
 .btn:disabled { opacity: .45; cursor: default; }
@@ -109,7 +109,7 @@ main { flex: 1; overflow: auto; position: relative; }
 .tbl-insert { position: relative; display: inline-flex; }
 #tableBtn { display: inline-flex; align-items: center; gap: 4px; }
 .tbl-picker {
-  position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; padding: 8px 10px 10px;
+  position: fixed; z-index: 30; padding: 8px 10px 10px;
   background: var(--bar); border: 1px solid var(--bar-border); border-radius: 8px;
   box-shadow: 0 6px 20px rgba(0, 0, 0, .18);
 }
@@ -166,6 +166,30 @@ main { flex: 1; overflow: auto; position: relative; }
 .resizing-col, .resizing-row { user-select: none; }
 /* 서식 복사 중 */
 .editing.painting .hwp-p, .editing.painting td { cursor: copy; }
+
+/* ---------- 모바일: 도구 모음을 한 줄로, 옆으로 밀어서 사용 ---------- */
+@media (max-width: 760px) {
+  .toolbar, #editBar {
+    flex-wrap: nowrap; overflow-x: auto; overscroll-behavior-x: contain;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .toolbar::-webkit-scrollbar, #editBar::-webkit-scrollbar { display: none; }
+  .toolbar { gap: 6px; padding: 6px 8px; }
+  .toolbar > *, .toolbar .zoom, .toolbar .edit-tools { flex-shrink: 0; }
+  .toolbar .spacer { display: none; }
+  .brand span { display: none; }
+  .file-name { max-width: 45vw; }
+  #editBar { padding: 5px 0 5px 8px; align-items: center; }
+  .edit-main { flex-wrap: nowrap; flex: none; }
+  .edit-main > * { flex-shrink: 0; }
+  /* 실행 취소/다시 실행/초기화는 오른쪽에 고정 */
+  .history-tools {
+    position: sticky; right: 0; z-index: 1; margin-left: 6px; padding: 0 8px 0 6px;
+    background: var(--bar); box-shadow: -8px 0 8px -6px rgba(0, 0, 0, .18);
+  }
+  .history-tools .btn { padding: 1px 8px; font-size: 17px; }
+  .history-tools .txt { display: none; }
+}
 
 @media print {
   .table-tools, .toast { display: none !important; }
