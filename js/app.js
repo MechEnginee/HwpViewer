@@ -86,17 +86,62 @@
     document.title = (v ? '● ' : '') + (fileName ? fileName + ' - ' : '') + 'HWP 뷰어';
   }
 
-  function setZoom(z) {
-    zoom = Math.min(4, Math.max(0.25, Math.round(z * 100) / 100));
-    pagesEl.style.zoom = zoom;
+  // ---------- 확대/축소 ----------
+  // 문서는 원본 크기로 배치한 채 transform 으로만 축소/확대하고, 감싼 sizer 에 배율 적용 후 크기를 줘서 스크롤되게 함
+  const sizer = $('sizer');
+  let fitMode = false;
+
+  function updateSizer() {
+    sizer.style.width = pagesEl.offsetWidth * zoom + 'px';
+    sizer.style.height = pagesEl.offsetHeight * zoom + 'px';
+  }
+  new ResizeObserver(updateSizer).observe(pagesEl);
+
+  // anchor: 이 화면 좌표 아래의 문서 지점이 확대/축소 뒤에도 같은 자리에 오도록 스크롤 보정
+  function setZoom(z, anchor, keepFit) {
+    if (!keepFit) fitMode = false;
+    const old = zoom;
+    zoom = Math.min(4, Math.max(0.1, Math.round(z * 1000) / 1000));
+    let pt = null;
+    if (anchor) {
+      const r = viewport.getBoundingClientRect();
+      const ax = anchor.x - r.left, ay = anchor.y - r.top;
+      pt = { ax, ay, x: (viewport.scrollLeft + ax - sizer.offsetLeft) / old, y: (viewport.scrollTop + ay - sizer.offsetTop) / old };
+    }
+    pagesEl.style.transform = zoom === 1 ? '' : `scale(${zoom})`;
+    updateSizer();
+    if (pt) {
+      viewport.scrollLeft = pt.x * zoom + sizer.offsetLeft - pt.ax;
+      viewport.scrollTop = pt.y * zoom + sizer.offsetTop - pt.ay;
+    }
     $('zoomReset').textContent = Math.round(zoom * 100) + '%';
+    updatePageInfo();
   }
 
+  // 폭 맞춤: 원본 모양 그대로 창 너비에 딱 맞게 축소
   function fitWidth() {
     if (!pages.length) return;
-    const w = Math.max(...pages.map((p) => p.offsetWidth));
-    setZoom((viewport.clientWidth - 48) / w);
+    const z = (viewport.clientWidth - 2) / pagesEl.offsetWidth;
+    setZoom(Math.min(z, 4), null, true);
+    fitMode = true;
   }
+  window.addEventListener('resize', () => { if (fitMode) fitWidth(); });
+
+  // 두 손가락 확대/축소 (모바일)
+  let pinch = null;
+  const touchDist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  const touchMid = (t) => ({ x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 });
+  viewport.addEventListener('touchstart', (e) => {
+    if (e.touches.length === 2 && pages.length) pinch = { d: touchDist(e.touches), z: zoom };
+  }, { passive: true });
+  viewport.addEventListener('touchmove', (e) => {
+    if (!pinch || e.touches.length !== 2) return;
+    e.preventDefault();
+    setZoom(pinch.z * touchDist(e.touches) / pinch.d, touchMid(e.touches));
+  }, { passive: false });
+  viewport.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinch = null; });
+  // iOS Safari 의 페이지 전체 확대 제스처는 막고 문서 확대로 처리
+  document.addEventListener('gesturestart', (e) => e.preventDefault());
 
   function updatePageInfo() {
     if (!pages.length) { $('pageInfo').textContent = ''; return; }
@@ -165,7 +210,7 @@
       setEditing(false);
       ['editBtn', 'saveBtn', 'saveAsBtn', 'printBtn'].forEach((id) => { $(id).disabled = false; });
       viewport.scrollTop = 0;
-      if (pages.length && pages[0].offsetWidth + 48 > viewport.clientWidth) fitWidth();
+      if (pages.length && pagesEl.offsetWidth > viewport.clientWidth) fitWidth(); else setZoom(1);
       updatePageInfo();
     } catch (e) {
       console.error(e);
@@ -397,7 +442,7 @@
     else if (k === 'o') { e.preventDefault(); $('fileInput').click(); }
   });
   viewport.addEventListener('wheel', (e) => {
-    if (e.ctrlKey) { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)); }
+    if (e.ctrlKey) { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1), { x: e.clientX, y: e.clientY }); }
   }, { passive: false });
   window.addEventListener('beforeunload', (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } });
 

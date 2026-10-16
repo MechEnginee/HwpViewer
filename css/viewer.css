@@ -24,6 +24,7 @@
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; }
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; touch-action: pan-x pan-y; }
 body {
   display: flex; flex-direction: column;
   background: var(--bg); color: var(--text);
@@ -129,7 +130,9 @@ main { flex: 1; overflow: auto; position: relative; }
 }
 
 /* ---------- 문서 ---------- */
-.pages { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 60px; width: max-content; min-width: 100%; }
+/* 문서는 항상 원본(100%) 크기로 배치하고 transform 으로만 확대/축소 → 배율과 상관없이 줄바꿈이 원본과 같음 */
+.sizer { margin: 0 auto; overflow: hidden; }
+.pages { display: flex; flex-direction: column; align-items: center; gap: 18px; padding: 24px 16px 60px; width: max-content; transform-origin: 0 0; }
 .hwp-page {
   position: relative; background: #fff; color: #000;
   box-shadow: 0 1px 3px rgba(0,0,0,.15), 0 6px 18px rgba(0,0,0,.10);
@@ -170,7 +173,8 @@ main { flex: 1; overflow: auto; position: relative; }
   body { display: block; background: #fff; }
   .toolbar, .empty, .loading, .error, .drop-overlay { display: none !important; }
   main { overflow: visible; }
-  .pages { padding: 0; gap: 0; display: block; zoom: 1 !important; width: auto; }
+  .sizer { width: auto !important; height: auto !important; overflow: visible; }
+  .pages { padding: 0; gap: 0; display: block; transform: none !important; width: auto; }
   .hwp-page { box-shadow: none; margin: 0; break-after: page; overflow: visible; }
   .hwp-page-num { display: none; }
 }
