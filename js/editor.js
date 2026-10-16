@@ -54,7 +54,8 @@
       return items;
     }
 
-    sync(host) {
+    // kind: 'type' 이면 글자 입력으로 생긴 변경 (실행 취소 단계 묶음용)
+    sync(host, kind) {
       if (!host || !host._para) return;
       const para = host._para;
       let items = this.collect(host, para.cs);
@@ -68,7 +69,7 @@
       if (!same) {
         para.items = items;
         para.dirty = true;
-        this.onChange();
+        this.onChange(kind);
       }
     }
 
@@ -153,6 +154,24 @@
       const n = this.renderer.paraEl(host._para, host._list, host._owner);
       host.replaceWith(n);
       return n;
+    }
+
+    // 실행 취소 기록용 커서 위치: { 문단, 글자 위치 }
+    caretInfo() {
+      const r = this.range();
+      if (!r) return null;
+      const host = this.hostOf(r.startContainer);
+      if (!host || !this.container.contains(host)) return null;
+      return { para: host._para, off: this.textOffset(host, r.startContainer, r.startOffset) };
+    }
+
+    // 후보 위치 중 화면에 남아 있는 첫 문단에 커서를 둠
+    restoreCaret(cands) {
+      for (const c of cands || []) {
+        const el = c && this.elOf(c.para);
+        if (el) { this.placeCaretAtText(el, Math.min(c.off, this.textLength(c.para))); return true; }
+      }
+      return false;
     }
 
     // ---------- 문단 나누기 / 합치기 ----------
@@ -563,9 +582,15 @@
     // ---------- 이벤트 ----------
     _bind() {
       const c = this.container;
-      c.addEventListener('input', (e) => { if (this.enabled) this.sync(this.hostOf(e.target)); });
+      c.addEventListener('input', (e) => { if (this.enabled) this.sync(this.hostOf(e.target), 'type'); });
       c.addEventListener('beforeinput', (e) => {
-        if (this.enabled && e.inputType && e.inputType.startsWith('format')) e.preventDefault(); // 서식 단축키는 지원하지 않음
+        if (!this.enabled || !e.inputType) return;
+        if (e.inputType.startsWith('format')) e.preventDefault(); // 서식 단축키는 지원하지 않음
+        else if (e.inputType === 'historyUndo' || e.inputType === 'historyRedo') {
+          // 브라우저 자체 실행 취소는 문서 모델과 어긋나므로 막고 편집기 기록을 사용
+          e.preventDefault();
+          if (this.onHistory) this.onHistory(e.inputType === 'historyUndo' ? 'undo' : 'redo');
+        }
       });
       c.addEventListener('paste', (e) => {
         if (!this.enabled) return;

@@ -14,13 +14,70 @@
   let dirty = false;
   let saveHandle = null;
 
+  const history = new HwpHistory();
   const editor = new HwpEditor({
     container: pagesEl,
-    onChange: () => setDirty(true),
+    onChange: (kind) => queueRecord(kind),
     onCellFocus: (table) => { $('tableTools').hidden = !(editing && table); },
   });
   editor.onSelection = updateFormatState;
   editor.onPainter = () => updatePainterUI();
+  editor.onHistory = (op) => (op === 'undo' ? undo() : redo());
+
+  // ---------- 실행 취소 / 다시 실행 ----------
+  // 한 동작(예: 문단 나누기)에서 변경 알림이 여러 번 와도 한 단계로 기록되도록 모아서 처리
+  let pending = null;
+  function queueRecord(kind) {
+    setDirty(true);
+    if (pending) { if (kind !== 'type') pending.kind = null; return; }
+    pending = { kind: kind === 'type' ? 'type' : null };
+    queueMicrotask(flushRecord);
+  }
+
+  function flushRecord() {
+    if (!pending) return;
+    const kind = pending.kind;
+    pending = null;
+    history.record(editor.caretInfo(), kind);
+    updateHistoryUI();
+  }
+
+  function updateHistoryUI() {
+    $('undoBtn').disabled = !history.canUndo;
+    $('redoBtn').disabled = !history.canRedo;
+    $('resetBtn').disabled = history.atOrigin;
+    setDirty(history.dirty);
+  }
+
+  function afterRestore(carets) {
+    if (!carets) return;
+    editor.stopPainter();
+    render();
+    editor.restoreCaret(carets);
+    updateHistoryUI();
+    updateFormatState();
+  }
+
+  function undo() {
+    if (!doc || !editing) return;
+    flushRecord();
+    afterRestore(history.undo());
+  }
+
+  function redo() {
+    if (!doc || !editing) return;
+    flushRecord();
+    afterRestore(history.redo());
+  }
+
+  function resetDoc() {
+    if (!doc || !editing) return;
+    flushRecord();
+    if (history.atOrigin) return;
+    if (!confirm('파일을 처음 열었을 때 상태로 모두 되돌릴까요?\n(실행 취소로 다시 복구할 수 있습니다)')) return;
+    if (history.resetToOrigin()) afterRestore([]);
+    viewport.scrollTop = 0;
+  }
 
   function setDirty(v) {
     dirty = v;
@@ -99,6 +156,9 @@
       } else throw new Error('HWP/HWPX 파일이 아닙니다. (한글 3.0 이하의 구버전 문서는 지원하지 않습니다)');
 
       objectUrls = Object.values(doc.images).map((i) => i.url).filter(Boolean);
+      pending = null;
+      history.init(doc);
+      updateHistoryUI();
       $('fileName').textContent = `${file.name}  ·  ${doc.format}`;
       setEditing(false);
       ['editBtn', 'saveBtn', 'saveAsBtn', 'printBtn'].forEach((id) => { $(id).disabled = false; });
@@ -118,6 +178,8 @@
     if (!doc) return;
     const active = document.activeElement && document.activeElement.closest && document.activeElement.closest('.hwp-p');
     if (active) editor.sync(active);
+    flushRecord();
+    const at = history.index;
     const isHwp = doc.source.kind === 'hwp';
     const ext = isHwp ? '.hwp' : '.hwpx';
     $('saveBtn').disabled = $('saveAsBtn').disabled = true;
@@ -143,7 +205,8 @@
         setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
       }
       $('fileName').textContent = `${fileName}  ·  ${doc.format}`;
-      setDirty(false);
+      history.markSaved(at);
+      setDirty(history.dirty);
       toast('저장했습니다: ' + fileName);
     } catch (e) {
       if (e && e.name === 'AbortError') return;
@@ -173,6 +236,9 @@
   $('editBtn').onclick = () => doc && setEditing(!editing);
   $('saveBtn').onclick = () => save(false);
   $('saveAsBtn').onclick = () => save(true);
+  $('undoBtn').onclick = undo;
+  $('redoBtn').onclick = redo;
+  $('resetBtn').onclick = resetDoc;
   viewport.addEventListener('scroll', updatePageInfo, { passive: true });
 
   // ---------- 글자 서식 (크기/굵게/서식 복사) ----------
@@ -241,6 +307,11 @@
     if (k === 's') { e.preventDefault(); if (doc) save(e.shiftKey); }
     else if (k === 'e') { e.preventDefault(); if (doc) setEditing(!editing); }
     else if (k === 'b' && editing) { e.preventDefault(); toggleBold(); }
+    else if ((k === 'z' || k === 'y') && editing && !e.altKey) {
+      if (e.isComposing || e.target.tagName === 'INPUT') return; // 한글 조합 중 / 글자 크기 입력란은 기본 동작
+      e.preventDefault();
+      if (k === 'y' || e.shiftKey) redo(); else undo();
+    }
     else if (e.key === '=' || e.key === '+') { e.preventDefault(); setZoom(zoom + 0.1); }
     else if (e.key === '-') { e.preventDefault(); setZoom(zoom - 0.1); }
     else if (e.key === '0') { e.preventDefault(); setZoom(1); }
@@ -265,5 +336,5 @@
     if (f) openFile(f);
   });
 
-  window.__hwpApp = { get doc() { return doc; }, editor, save, openFile, setEditing };
+  window.__hwpApp = { get doc() { return doc; }, editor, history, save, openFile, setEditing, undo, redo, resetDoc };
 })();

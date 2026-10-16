@@ -96,6 +96,7 @@ main { flex: 1; overflow: auto; position: relative; }
 .size-box .unit { font-size: 12px; color: var(--muted); margin-right: 2px; }
 .bold-btn { min-width: 32px; }
 .hint { color: var(--accent); font-size: 13px; font-weight: 600; margin-left: 6px; }
+.history-tools { display: inline-flex; gap: 4px; margin-left: auto; }
 .toast {
   position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); z-index: 200;
   background: #1f2328; color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 14px;

@@ -54,6 +54,11 @@
       <button class="btn danger" data-op="tableDelete">표 삭제</button>
     </span>
     <span id="painterHint" class="hint" hidden></span>
+    <span class="history-tools">
+      <button class="btn" id="undoBtn" title="실행 취소 (Ctrl Z)" disabled>↶ 실행 취소</button>
+      <button class="btn" id="redoBtn" title="다시 실행 (Ctrl Y)" disabled>↷ 다시 실행</button>
+      <button class="btn danger" id="resetBtn" title="파일을 처음 열었을 때 상태로 되돌리기" disabled>⟲ 초기화</button>
+    </span>
   </div>
 
   <main id="viewport">
@@ -78,6 +83,7 @@
   <script src="js/render.js"></script>
   <script src="js/writer-hwp.js"></script>
   <script src="js/writer-hwpx.js"></script>
+  <script src="js/history.js"></script>
   <script src="js/editor.js"></script>
   <script src="js/app.js"></script>
 </body>
