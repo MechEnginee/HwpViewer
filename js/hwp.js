@@ -374,16 +374,20 @@
       w: dv.getUint32(16, true) * HWPUNIT_PX,
       node,
       cells: [], rows: 0, cols: 0, borderFillId: 0,
+      pre: [], // 표 정보(TABLE) 앞의 레코드 (캡션 등) — 표시하지 않고 저장 시 그대로 보존
     };
-    let cell = null;
+    let cell = null, seenTable = false;
     for (const c of node.children) {
+      if (!seenTable && c.tag !== T.TABLE) { table.pre.push(c); continue; }
       if (c.tag === T.TABLE) {
+        seenTable = true;
         const v = view(c.data);
         table.rows = v.getUint16(4, true);
         table.cols = v.getUint16(6, true);
         const bfOff = 18 + table.rows * 2;
         if (bfOff + 2 <= c.data.length) table.borderFillId = v.getUint16(bfOff, true);
       } else if (c.tag === T.LIST_HEADER) {
+        if (c.data.length < 32) { cell = null; continue; } // 셀이 아닌 목록
         const v = view(c.data);
         const prop = v.getUint32(4, true);
         cell = {

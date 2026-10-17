@@ -29,7 +29,119 @@
     return out;
   }
 
+  // ---------- deflate 압축 해제 (JavaScript 구현) ----------
+  // 브라우저의 DecompressionStream 은 압축 데이터 뒤에 여분 바이트가 있으면 오류를 내는데,
+  // Safari 는 그때까지 풀린 결과도 주지 않아 문서가 빈 화면으로 열린다.
+  // 이 구현은 압축 블록의 끝에서 멈추므로 뒤에 붙은 바이트를 그냥 무시한다.
+  const LEN_BASE = [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258];
+  const LEN_EXTRA = [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0];
+  const DIST_BASE = [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073,
+    4097, 6145, 8193, 12289, 16385, 24577];
+  const DIST_EXTRA = [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13];
+  const CL_ORDER = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15];
+
+  function huffman(lengths) {
+    const count = new Uint16Array(16), symbol = new Uint16Array(lengths.length), offs = new Uint16Array(16);
+    for (const l of lengths) count[l]++;
+    count[0] = 0;
+    for (let i = 1; i < 16; i++) offs[i] = offs[i - 1] + count[i - 1];
+    lengths.forEach((l, s) => { if (l) symbol[offs[l]++] = s; });
+    return { count, symbol };
+  }
+  let FIXED = null;
+  function fixedTables() {
+    if (!FIXED) {
+      const l = new Array(288);
+      for (let i = 0; i < 288; i++) l[i] = i < 144 ? 8 : i < 256 ? 9 : i < 280 ? 7 : 8;
+      FIXED = [huffman(l), huffman(new Array(30).fill(5))];
+    }
+    return FIXED;
+  }
+
+  function inflateRawJS(src) {
+    let pos = 0, bitBuf = 0, bitCnt = 0;
+    let out = new Uint8Array(Math.max(1024, src.length * 4)), n = 0;
+    const need = (k) => {
+      if (n + k <= out.length) return;
+      const o = new Uint8Array(Math.max(out.length * 2, n + k));
+      o.set(out.subarray(0, n)); out = o;
+    };
+    const bits = (k) => {
+      while (bitCnt < k) {
+        if (pos >= src.length) throw new Error('압축 데이터가 중간에 끝났습니다.');
+        bitBuf |= src[pos++] << bitCnt; bitCnt += 8;
+      }
+      const v = bitBuf & ((1 << k) - 1);
+      bitBuf >>>= k; bitCnt -= k;
+      return v;
+    };
+    const decode = (h) => {
+      let code = 0, first = 0, index = 0;
+      for (let len = 1; len < 16; len++) {
+        code |= bits(1);
+        const c = h.count[len];
+        if (code - first < c) return h.symbol[index + code - first];
+        index += c; first = (first + c) << 1; code <<= 1;
+      }
+      throw new Error('잘못된 압축 데이터입니다.');
+    };
+    for (let last = 0; !last;) {
+      last = bits(1);
+      const type = bits(2);
+      if (type === 0) {
+        bitBuf = 0; bitCnt = 0;
+        if (pos + 4 > src.length) throw new Error('압축 데이터가 중간에 끝났습니다.');
+        const len = src[pos] | (src[pos + 1] << 8);
+        pos += 4;
+        if (pos + len > src.length) throw new Error('압축 데이터가 중간에 끝났습니다.');
+        need(len); out.set(src.subarray(pos, pos + len), n); n += len; pos += len;
+        continue;
+      }
+      let lit, dist;
+      if (type === 1) [lit, dist] = fixedTables();
+      else if (type === 2) {
+        const nlen = bits(5) + 257, ndist = bits(5) + 1, ncode = bits(4) + 4;
+        const cl = new Array(19).fill(0);
+        for (let i = 0; i < ncode; i++) cl[CL_ORDER[i]] = bits(3);
+        const clh = huffman(cl);
+        const lens = [];
+        while (lens.length < nlen + ndist) {
+          const sym = decode(clh);
+          if (sym < 16) lens.push(sym);
+          else {
+            let rep, val = 0;
+            if (sym === 16) {
+              if (!lens.length) throw new Error('잘못된 압축 데이터입니다.');
+              val = lens[lens.length - 1]; rep = 3 + bits(2);
+            } else rep = sym === 17 ? 3 + bits(3) : 11 + bits(7);
+            while (rep--) lens.push(val);
+          }
+        }
+        lit = huffman(lens.slice(0, nlen));
+        dist = huffman(lens.slice(nlen, nlen + ndist));
+      } else throw new Error('잘못된 압축 데이터입니다.');
+      for (;;) {
+        const sym = decode(lit);
+        if (sym < 256) { need(1); out[n++] = sym; continue; }
+        if (sym === 256) break;
+        const li = sym - 257;
+        if (li >= 29) throw new Error('잘못된 압축 데이터입니다.');
+        const len = LEN_BASE[li] + bits(LEN_EXTRA[li]);
+        const di = decode(dist);
+        if (di >= 30) throw new Error('잘못된 압축 데이터입니다.');
+        const d = DIST_BASE[di] + bits(DIST_EXTRA[di]);
+        if (d > n) throw new Error('잘못된 압축 데이터입니다.');
+        need(len);
+        for (let i = 0; i < len; i++, n++) out[n] = out[n - d];
+      }
+    }
+    return out.slice(0, n);
+  }
+
+  // HWP 스트림은 거의 항상 압축 데이터 뒤에 여분 바이트가 있어 브라우저 압축 해제가 오류를 내고,
+  // 그때 결과가 128KB 에서 잘리거나(Chrome) 아예 비는(Safari) 문제가 있어 JavaScript 구현을 먼저 사용
   async function inflateRaw(data) {
+    try { return inflateRawJS(data); } catch (e) { /* 아래에서 브라우저 구현으로 시도 */ }
     try {
       return await decompress(data, 'deflate-raw');
     } catch (e) {
@@ -388,7 +500,9 @@
       if (!f) return null;
       const data = rawData(f);
       if (f.method === 0) return data;
-      if (f.method === 8) return await decompress(data, 'deflate-raw');
+      if (f.method === 8) {
+        try { return await decompress(data, 'deflate-raw'); } catch (e) { return inflateRawJS(data); }
+      }
       throw new Error('지원하지 않는 ZIP 압축 방식: ' + f.method);
     }
     return {
@@ -400,5 +514,5 @@
     };
   }
 
-  global.HwpContainer = { parseCFB, parseZIP, inflateRaw, deflateRaw, writeCFB, writeZIP, crc32 };
+  global.HwpContainer = { parseCFB, parseZIP, inflateRaw, inflateRawJS, deflateRaw, writeCFB, writeZIP, crc32 };
 })(window);

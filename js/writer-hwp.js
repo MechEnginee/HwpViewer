@@ -147,7 +147,7 @@
     data.set(rest, 18 + t.rows * 2);
     tableRec.data = data;
 
-    const children = [tableRec];
+    const children = [...(t.pre || []), tableRec];
     for (const c of cells) {
       writeParas(c.paras);
       const lh = c.raw;
